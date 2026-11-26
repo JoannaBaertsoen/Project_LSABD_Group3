@@ -1,0 +1,436 @@
+---
+title: "Heatmaps"
+author: "Celine Everaert & Toon Callens"
+date: "22/10/2026"
+output: 
+  bookdown::html_document2:
+    theme: paper
+    highlight: tango
+    code_folding: show
+    toc: true
+    number_sections: true
+    toc_float: true
+    toc_depth: 3
+---
+
+This is an additional notebook on how to make heatmaps. Heatmaps can be interesting for both continuous data as well as categorical data, or a combination of both. You could make some basic heatmaps with **ggplot**, hence its not recommended.
+For this practical session you will learn how to work with the **ComplexHeatmap** package. But don't be afraid, the name doesn't mean its complex to make a heatmap, but you can make quite complex heatmaps in an easy fashion.
+
+# Install ComplexHeatmap
+
+**ComplexHeatmap** is part of the bioconductor environment. You can either download it from there or install the latest version from the developers Github page. You only need to execute this installation once (or after an R version update). For the next sessions, you can just load the library. If you used to work with heatmaps before, this package is highly similar to the **pheatmap** package, but a bit more versatile. An extremely extensive manual can be found (here) [https://jokergoo.github.io/ComplexHeatmap-reference/book/]. This notebook is an adaptation of this manual. We will only tackle the chapter simple heatmaps and add annotation to these. If you want to have an idea what you can do with more extensive heatmaps, definitely check their examples.
+
+```{r}
+# install bioconductor
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+#  install.packages("BiocManager")
+#BiocManager::install(version = "3.23")
+
+# Bioconductor option
+#BiocManager::install("ComplexHeatmap")
+
+# or Github option
+#install.packages("devtools")
+#library(devtools)
+#install_github("jokergoo/ComplexHeatmap")
+```
+
+Load the library:
+
+```{r}
+library(ComplexHeatmap)
+library(tidyverse)
+```
+
+# The basic concepts
+
+The main functions of complex heatmaps are:
+- `Heatmap()` : a single heatmap containing heatmap body, row/column names, titles, dendrograms and row/column annotations
+- `HeatmapAnnotation()` : adding annotation to the columns
+- `rowAnnotation()` : adding annotation to the rows, similar to `HeatmapAnnotation()`
+
+Look into both help functions to discover the possibilities.
+
+```{r}
+?Heatmap
+?HeatmapAnnotation
+?rowAnnotation
+```
+
+
+## A random single heatmap
+
+Let's play around with the options and generate some random data for that. The heatmap functions prefers that the data is in a matrix, although it will also work with a data.frame format.
+
+```{r}
+set.seed(123)
+
+mat <- matrix(rnorm(36),nrow=6) # random shuffle rows and columns
+rownames(mat) <- paste0("row_", 1:nrow(mat))
+colnames(mat) <- paste0("column_", 1:ncol(mat))
+
+# simple standard heatmap of a matrix
+Heatmap(mat)
+
+df_mat <- as.data.frame(mat)
+Heatmap(df_mat)
+
+#when using a tibble, you loose your row annotations
+tib_mat <- as.tibble(mat)
+Heatmap(tib_mat)
+
+#this can be solved by set the column with rownames as rownames
+rownames(tib_mat) <- rownames(mat)
+Heatmap(tib_mat)
+```
+
+## Changing the layout
+
+### Adding colors
+
+Colors are highly important in the interpretation of a heatmap. You could use the `circlize::colorRamp2()` function to generate color pallet's. In this example, color values lower than -2 and higher than 2 are are mapped to respectively green and red.
+
+```{r}
+library(circlize)
+```
+
+In following example, values between -2 and 2 are linearly interpolated to get corresponding colors, values larger than 2 are all mapped to red and values less than -2 are all mapped to green. The values between -2 and 2 are a linear scale of these values with 0 as white. The advantage of working like this is that the color scale is not effected by outliers. Let's introduce an outlier in our random matrix to demonstrate this. Notice that the clustering will change when introducing this outlier. Another advantage of a fixed scale is that the color schemes between heatmaps are comparable. 
+
+```{r}
+col_fun = colorRamp2(c(-2, 0, 2), c("green", "white", "red"))
+Heatmap(mat, col = col_fun)
+
+mat_outlier <- mat
+mat_outlier[2,2]<-300
+
+#outlier heatmap where color scale is not limited
+Heatmap(mat_outlier)
+
+#outlier heatmap where color scale is limited
+Heatmap(mat_outlier, col = col_fun)
+```
+
+Sometimes you want to indicate NA values in a different color (eg. darkgrey or black).
+
+```{r}
+# introducing NA values in a random way
+mat_with_na <- mat
+na_index <- sample(c(TRUE, FALSE), nrow(mat)*ncol(mat), replace = TRUE, prob = c(1, 9))
+mat_with_na[na_index] <- NA
+
+# heatmap with na color black, either with default color scale or costum scale
+Heatmap(mat_with_na, na_col = "black")
+Heatmap(mat_with_na, col = col_fun, na_col = "black")
+```
+
+### Colors in a heatmap of categorical data
+
+Often heatmaps are used for continuous data, although it might be useful for categorical data as well. For instance to inspect correlation between your variables. Let's create a random matrix of categories and put it in heatmap.
+
+```{r}
+discrete_mat = matrix(sample(1:4, 100, replace = TRUE), 10, 10)
+# colors can be expressed as a number color 1-$ stands for black, red, green, blue
+colors = structure(1:4, names = c("1", "2", "3", "4")) 
+Heatmap(discrete_mat, name = "mat", col = colors)
+
+# adding your own color palette
+colors <- c("red", "pink", "lightblue", "darkgreen")
+names(colors) <- 1:4
+Heatmap(discrete_mat, name = "mat", col = colors)
+```
+
+
+### Adding titles
+
+Good (self) explanatory titles are part of a good visualization. This is how you add them:
+
+```{r}
+Heatmap(mat, name = "mat", column_title = "I am a column title", 
+    row_title = "I am a row title")
+
+Heatmap(mat, name = "mat", column_title = "I am a column title at the bottom", 
+    column_title_side = "bottom")
+
+Heatmap(mat, name = "mat", column_title = "I am a big column title", 
+    column_title_gp = gpar(fontsize = 20, fontface = "bold"))
+
+# rotate the row title to make it more readible
+Heatmap(mat, name = "mat", column_title = "I am a column title", 
+    row_title = "I am a row title", row_title_rot = 0)
+```
+
+### Playing with row and column name layout
+
+As for the titles, we can easily change the row and column names layout.
+
+```{r}
+#don't display row_names
+Heatmap(mat, name = "mat", show_row_names = FALSE)
+#make rownames larger
+Heatmap(mat, name = "mat", row_names_gp = gpar(fontsize = 20))
+#color rownames
+Heatmap(mat, name = "mat", 
+    row_names_gp = gpar(col = c(rep("red", 3), rep("blue", 3))))
+
+#can you do the same for column names?
+#don't display col_names
+Heatmap(mat, name = "mat", show_column_names = FALSE)
+#make colnames larger
+Heatmap(mat, name = "mat", column_names_gp = gpar(fontsize = 20))
+#color colnames
+Heatmap(mat, name = "mat", 
+    column_names_gp = gpar(col = c(rep("red", 3), rep("blue", 3))))
+```
+
+### Adding additional white space around the borders
+
+Colors for the heatmap borders can be set by the `border/border_gp` and `rect_gp` arguments. `border/border_gp` controls the global border of the heatmap body and `rect_gp` controls the border of the grids/cells in the heatmap.
+
+The value of border can be logical (TRUE corresponds to black) or a character of color (e.g. red). The use for border argument is only for historical reason, here you can also set border_gp argument which should be a gpar object. gpar stands for a combination of graphical parameters, e.g. color (col), the line type (lty) and line width (lwd).
+
+rect_gp is a gpar object which means you can only set it by grid::gpar(). Since the filled color is already controlled by the heatmap color mapping, you can only set the col/lwd/lty parameters in gpar() to control the border of the heatmap grids.
+
+```{r}
+#adding a dotted black line arround the heatmap
+Heatmap(mat, name = "mat", border_gp = gpar(col = "black", lty = 2),
+    column_title = "set heatmap borders")
+
+#having white space around the individual boxes
+Heatmap(mat, name = "mat", rect_gp = gpar(col = "white", lwd = 2),
+    column_title = "set cell borders")
+```
+
+## Clustering
+
+Clustering might be the key component of heatmap visualization. In ComplexHeatmap package, hierarchical clustering is supported with great flexibility. You can specify the clustering either by:
+
+- a pre-defined distance method (e.g. "euclidean" or "pearson"),
+- a distance function,
+- a object that already contains clustering (a hclust or dendrogram object or object that can be coerced to dendrogram class),
+- a clustering function.
+
+We will limit ourselfs to the pre-defined methods.
+
+It is also possible to render the dendrograms with different colors and styles for different nodes and branches for better revealing structures of the dendrogram (e.g. by `dendextend::color_branches()`).
+
+### Changing the looks of the dendogram
+
+First, there are general settings for the clustering, e.g. whether to apply clustering or show dendrograms, the side of the dendrograms and heights of the dendrograms.
+
+```{r}
+Heatmap(mat, name = "mat", cluster_rows = FALSE) # turn off row clustering
+Heatmap(mat, name = "mat", show_column_dend = FALSE) # hide column dendrogram
+Heatmap(mat, name = "mat", row_dend_side = "right", column_dend_side = "bottom")
+Heatmap(mat, name = "mat", column_dend_height = unit(4, "cm"), 
+    row_dend_width = unit(4, "cm"))
+```
+
+### Changing clustering method
+
+We will try to use different clustering methods for the rows. Notice that the method has quite a lot of implications on the order and thus on the interpretation of the results as well. The euclidean distance is the default one.
+
+```{r}
+Heatmap(mat, name = "mat", clustering_distance_rows = "pearson",
+    column_title = "pre-defined distance method (1 - pearson)")
+
+Heatmap(mat, name = "mat", clustering_distance_rows = "spearman",
+    column_title = "pre-defined distance method (1 - spearman)")
+```
+
+### Defining an order without clustering
+
+Sometimes you prefer the columns or rows to stay in a predefined order. This you could do by setting the row_order to a predefined order. In this case we will use the numeric values that are in our names. We first extract them with the `gsub()` function. If we wouldn't extract the numbers first, the order will be defined on the alphabet. This has as an implication that 11 would come before 2.
+
+```{r}
+gsub("row_", "", rownames(mat))
+
+Heatmap(mat, name = "mat", 
+    row_order = order(as.numeric(gsub("row_", "", rownames(mat)))), 
+    column_order = order(as.numeric(gsub("column_", "", colnames(mat)))),
+    column_title = "reorder matrix")
+```
+
+### Split heatmap in blocks
+
+In some cases its handy to split the heatmap in a number of groups. In this case, we will split our heatmap in two.
+
+```{r}
+Heatmap(mat, name = "mat", row_km = 2)
+```
+
+## Adding annotations
+
+Adding annotations to the rows and columns of a heatmap will ease the interpretation.
+
+With the `runif()` function, we generate random numbers between 0 and 1.
+With the `sample()` function, we will random pick letters from a list.
+
+```{r}
+runif(6)
+sample(letters[1:3],6, replace=TRUE)
+```
+
+
+### Simple annotations
+
+Annotations can be added to columns and rows. For column annotations, the function `HeatmapAnnotation()` is used, for rows we use `rowAnnotation()`.
+Annotations can be made for both continuous and discrete values. For adding annotations, you create a separate annotation object and when making the heatmap you can refer to this object. If you rerun this block multiple times, the used color codes will be different.
+
+```{r}
+# adding a continuous variable as an annotation
+ha = HeatmapAnnotation(foo = runif(6))
+Heatmap(mat, name = "mat", top_annotation = ha)
+
+# adding a discrete value as an annotation to the top
+ha = HeatmapAnnotation(bar = sample(letters[1:3], 6, replace = TRUE))
+Heatmap(mat, name = "mat", top_annotation = ha)
+
+# adding a discrete value as an annotation to the bottom
+Heatmap(mat, name = "mat", bottom_annotation = ha)
+
+# adding a row annotation to the right
+ha = rowAnnotation(bar = sample(letters[1:4], 6, replace = TRUE))
+Heatmap(mat, name = "mat", right_annotation = ha)
+
+# adding a row annotation to the left
+Heatmap(mat, name = "mat", left_annotation = ha)
+```
+
+We can play around with the colors of our annotation in a similar way as we did for the heatmap itself and as such define the color codes/scales ourself.
+
+```{r}
+col_fun = colorRamp2(c(0, 1), c( "white", "darkgreen"))
+ha_col = HeatmapAnnotation(foo = runif(6), col = list(foo = col_fun))
+
+ha_row = rowAnnotation(bar = sample(letters[1:4], 6, replace = TRUE),
+    col = list(bar = c("a" = "red", "b" = "green", "c" = "blue", "d" = "yellow")))
+
+Heatmap(mat, name = "mat", top_annotation = ha_col, right_annotation = ha_row)
+```
+
+### Multiple annotations
+
+Instead of adding only one annotation variables, we could add multiple ones. In this example, we will add two continuous variables for both the rows as the columns.
+
+```{r}
+column_ha = HeatmapAnnotation(foo1 = runif(6), bar1 = runif(6))
+row_ha = rowAnnotation(foo2 = runif(6), bar2 = runif(6))
+Heatmap(mat, name = "mat", top_annotation = column_ha, right_annotation = row_ha)
+```
+
+### Special annotation formats
+
+The fun thing is that with the **ComplexHeatmaps** library, you can add also points, bars, lines, boxplots, histograms and densities as annotations. This might be really helpful in some specific cases and could result in extremely informative and beautiful plots. Its handy to know that this possibility exist, but we will not cover it in this notebook. More information can be find in the online handbook. This is a small demonstration for adding points and/or barplots as an annotation format. Nottice that the within the `HeatmapAnnotation()` function this is defined by the `anno_points()` and `anno_barplot()`.
+
+```{r}
+column_ha = HeatmapAnnotation(foo1 = runif(6), bar1 = anno_points(runif(6)))
+row_ha = rowAnnotation(foo2 = runif(6), bar2 = anno_barplot(runif(6)))
+Heatmap(mat, name = "mat", top_annotation = column_ha, right_annotation = row_ha)
+```
+
+
+# Exploring qPCR data by making heatmaps.
+
+To explore some complex data (multiple variables), we will make use of a Neuroblastoma dataset where qPCR analysis was performed on multiple patients samples. A second document with sample annotations is available.
+
+Read in the data, which is stored as a tsv format.
+
+```{r}
+NB_data_exp <- read_tsv("../../Data/qPCR_expression_data.tsv")
+NB_data_info <- read_tsv("../../Data/qPCR_sample_data.tsv")
+```
+
+Make a basic heatmap for the expression data. We will build up this basic heatmap step by step. Since the genenames are a column, you need to set this column as rownames first by using the `column_to_rownames()` function. Note, the expression data was scaled per gene. This makes the expression more or less comparable. Give a useful name to the heatmap.
+
+```{r}
+Heatmap(NB_data_exp %>% column_to_rownames("genename"), name="qPCR exp")
+```
+Change the colors of the heatmap to darkred (less expression) and darkgreen (more expression). Use -5 and 5 as the borders.
+
+```{r}
+col_fun = colorRamp2(c(-5, 0, 5), c("darkred", "white", "darkgreen"))
+Heatmap(NB_data_exp %>% column_to_rownames("genename"), name="qPCR exp", col = col_fun)
+
+```
+
+Remove the column and row labels. At "genes measured by qPCR" as a row title and "patients" as the column title.
+
+```{r}
+Heatmap(NB_data_exp %>% column_to_rownames("genename"), name="qPCR exp", col = col_fun, show_row_names = FALSE, show_column_names = FALSE, row_title = "genes measured by qPCR", column_title = "patients")
+```
+Change the clustering distance metric (both row and columns) to pearson correlation. Split the patients (columns) in three groups.
+
+```{r}
+Heatmap(NB_data_exp %>% column_to_rownames("genename"), name="qPCR exp", col = col_fun, 
+        show_row_names = FALSE, show_column_names = FALSE, 
+        row_title = "genes measured by qPCR", column_title = "patients",
+        clustering_distance_columns = "pearson", clustering_distance_rows = "pearson",
+        column_km=3)
+```
+
+Remove the dendograms.
+
+```{r}
+Heatmap(NB_data_exp %>% column_to_rownames("genename"), name="qPCR exp", col = col_fun, 
+        show_row_names = FALSE, show_column_names = FALSE, 
+        row_title = "genes measured by qPCR", column_title = "patients",
+        clustering_distance_columns = "pearson", clustering_distance_rows = "pearson",
+        column_km=3,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE)
+```
+
+Now add patient annotations coming from the annotation table. We will add the MNA status (MYCN amplified yes or no) and stage (1, 2, 3, 4 and 4S(indicated as 5)). Make sure that these are seen as factors
+
+```{r}
+column_ha = HeatmapAnnotation(MNA = as.factor(NB_data_info$MNA), Stage = as.factor(NB_data_info$Stage))
+
+Heatmap(NB_data_exp %>% column_to_rownames("genename"), name="qPCR exp", col = col_fun, 
+        show_row_names = FALSE, show_column_names = FALSE, 
+        row_title = "genes measured by qPCR", column_title = "patients",
+        clustering_distance_columns = "pearson", clustering_distance_rows = "pearson",
+        column_km=3,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        top_annotation = column_ha)
+```
+
+This gives often a  combination of quite ugly colors. Make something you like more. You can choose to use the color brewer library, or just create your own palette. Its important to name the color vectors to make this work.
+
+```{r}
+library(RColorBrewer)
+colors_stage <- RColorBrewer::brewer.pal(5, "Set3")
+names(colors_stage) <- c("1","2","3","4","5")
+colors_MNA <- RColorBrewer::brewer.pal(2, "Paired")
+names(colors_MNA) <- c("0","1","NA")
+
+column_ha = HeatmapAnnotation(MNA = as.factor(NB_data_info$MNA), Stage = as.factor(NB_data_info$Stage), col = list(MNA=colors_MNA, Stage=colors_stage))
+
+Heatmap(NB_data_exp %>% column_to_rownames("genename"), name="qPCR exp", col = col_fun, 
+        show_row_names = FALSE, show_column_names = FALSE, 
+        row_title = "genes measured by qPCR", column_title = "patients",
+        clustering_distance_columns = "pearson", clustering_distance_rows = "pearson",
+        column_km=3,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        top_annotation = column_ha)
+```
+
+Could you do the same, but only for the patients with a disease stage 4? Use the skills from the previous lessons to create suitable data frames/tibbles. Let's divide the columns in two groups and remove the stage annotation.
+
+```{r}
+NB_data_info_4 <- NB_data_info %>% filter(Stage == 4)
+
+NB_data_exp_4 <- NB_data_exp %>% column_to_rownames("genename") %>% select(NB_data_info_4$patientID)
+
+column_ha = HeatmapAnnotation(MNA = as.factor(NB_data_info_4$MNA), col = list(MNA=colors_MNA))
+
+Heatmap(NB_data_exp_4, name="qPCR exp", col = col_fun, 
+        show_row_names = FALSE, show_column_names = FALSE, 
+        row_title = "genes measured by qPCR", column_title = "patients",
+        clustering_distance_columns = "pearson", clustering_distance_rows = "pearson",
+        column_km=2,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        top_annotation = column_ha)
+```
